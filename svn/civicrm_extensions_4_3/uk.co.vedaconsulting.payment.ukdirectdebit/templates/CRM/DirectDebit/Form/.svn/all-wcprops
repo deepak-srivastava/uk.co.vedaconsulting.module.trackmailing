@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 120
+/civicrm-dd/!svn/ver/45/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.ukdirectdebit/templates/CRM/DirectDebit/Form
+END
+DirectDebit.tpl
+K 25
+svn:wc:ra_dav:version-url
+V 136
+/civicrm-dd/!svn/ver/45/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.ukdirectdebit/templates/CRM/DirectDebit/Form/DirectDebit.tpl
+END
+DirectDebitList.tpl
+K 25
+svn:wc:ra_dav:version-url
+V 140
+/civicrm-dd/!svn/ver/45/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.ukdirectdebit/templates/CRM/DirectDebit/Form/DirectDebitList.tpl
+END

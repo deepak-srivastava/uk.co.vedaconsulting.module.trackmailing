@@ -1,0 +1,23 @@
+K 25
+svn:wc:ra_dav:version-url
+V 83
+/civicrm-dd/!svn/ver/137/civicrm_extensions_4_3/uk.co.vedaconsulting.module.geocode
+END
+info.xml
+K 25
+svn:wc:ra_dav:version-url
+V 92
+/civicrm-dd/!svn/ver/137/civicrm_extensions_4_3/uk.co.vedaconsulting.module.geocode/info.xml
+END
+geocode.php
+K 25
+svn:wc:ra_dav:version-url
+V 95
+/civicrm-dd/!svn/ver/136/civicrm_extensions_4_3/uk.co.vedaconsulting.module.geocode/geocode.php
+END
+geocode.civix.php
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/civicrm-dd/!svn/ver/136/civicrm_extensions_4_3/uk.co.vedaconsulting.module.geocode/geocode.civix.php
+END

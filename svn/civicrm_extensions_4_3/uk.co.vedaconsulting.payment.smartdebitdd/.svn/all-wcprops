@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 89
+/civicrm-dd/!svn/ver/316/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd
+END
+example.php
+K 25
+svn:wc:ra_dav:version-url
+V 100
+/civicrm-dd/!svn/ver/45/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd/example.php
+END
+example2.php
+K 25
+svn:wc:ra_dav:version-url
+V 101
+/civicrm-dd/!svn/ver/45/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd/example2.php
+END
+smart_debit_includes.php
+K 25
+svn:wc:ra_dav:version-url
+V 114
+/civicrm-dd/!svn/ver/191/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd/smart_debit_includes.php
+END
+info.xml
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/civicrm-dd/!svn/ver/316/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd/info.xml
+END
+smart_debit_dd.php
+K 25
+svn:wc:ra_dav:version-url
+V 108
+/civicrm-dd/!svn/ver/280/civicrm_extensions_4_3/uk.co.vedaconsulting.payment.smartdebitdd/smart_debit_dd.php
+END

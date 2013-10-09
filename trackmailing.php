@@ -1,0 +1,329 @@
+<?php
+
+require_once 'trackmailing.civix.php';
+
+/**
+ * Implementation of hook_civicrm_config
+ */
+function trackmailing_civicrm_config(&$config) {
+  _trackmailing_civix_civicrm_config($config);
+}
+
+/**
+ * Implementation of hook_civicrm_xmlMenu
+ *
+ * @param $files array(string)
+ */
+function trackmailing_civicrm_xmlMenu(&$files) {
+  _trackmailing_civix_civicrm_xmlMenu($files);
+}
+
+/**
+ * Implementation of hook_civicrm_install
+ */
+function trackmailing_civicrm_install() {
+ $sql = "CREATE TABLE IF NOT EXISTS civicrm_custom_track_mailing
+          (
+          id int primary key AUTO_INCREMENT,
+          schedule_reminder_id  int,
+          mailing_id int
+          )";
+  CRM_Core_DAO::executeQuery($sql);
+  return _trackmailing_civix_civicrm_install();
+}
+
+
+/**
+ * Implementation of hook_civicrm_uninstall
+ */
+function trackmailing_civicrm_uninstall() {
+  return _trackmailing_civix_civicrm_uninstall();
+}
+
+/**
+ * Implementation of hook_civicrm_enable
+ */
+function trackmailing_civicrm_enable() {
+   return _trackmailing_civix_civicrm_enable();
+}
+
+/**
+ * Implementation of hook_civicrm_disable
+ */
+function trackmailing_civicrm_disable() {
+  $sql = "Select count(*) as count FROM civicrm_custom_track_mailing";
+  $dao = CRM_Core_DAO::singleValueQuery($sql);
+  if ($dao){
+    $message = "Cannot disable this extensions. Some of the Mailing Jobs are attached to Schedule Reminders";
+    die($message);
+  }else{
+    return _trackmailing_civix_civicrm_disable();
+  }
+}
+
+/**
+ * Implementation of hook_civicrm_upgrade
+ *
+ * @param $op string, the type of operation being performed; 'check' or 'enqueue'
+ * @param $queue CRM_Queue_Queue, (for 'enqueue') the modifiable list of pending up upgrade tasks
+ *
+ * @return mixed  based on op. for 'check', returns array(boolean) (TRUE if upgrades are pending)
+ *                for 'enqueue', returns void
+ */
+function trackmailing_civicrm_upgrade($op, CRM_Queue_Queue $queue = NULL) {
+  return _trackmailing_civix_civicrm_upgrade($op, $queue);
+}
+
+/**
+ * Implementation of hook_civicrm_managed
+ *
+ * Generate a list of entities to create/deactivate/delete when this module
+ * is installed, disabled, uninstalled.
+ */
+function trackmailing_civicrm_managed(&$entities) {
+  return _trackmailing_civix_civicrm_managed($entities);
+}
+
+function trackmailing_civicrm_buildForm($formName, &$form) {
+  if ($formName == "CRM_Admin_Form_ScheduleReminders"){
+
+      //using sql to retrive all the mailing job and mailing id
+      $query = "SELECT cmj.id as job_id
+                , cmj.mailing_id as mid
+                , cm.name as name
+                , cm.is_archived as is_archived
+                FROM `civicrm_mailing_job` as cmj
+                  JOIN civicrm_mailing as cm ON ( cm.id = cmj.mailing_id)
+                ORDER BY cm.is_archived DESC, cm.name ASC
+                ";
+      $dao = CRM_Core_DAO::executeQuery($query);
+      while ( $dao->fetch() ){
+        $getAllMailingJob[$dao->mid] = $dao->name;
+      }
+
+     $form->addElement( 'checkbox', 'trackMail', ts( 'Track Mailing' ) );
+     $form->addElement( 'select', 'mailing_job', ts( 'Mailing Job' ), $getAllMailingJob);
+
+    // also assign to template
+    $template =& CRM_Core_Smarty::singleton( );
+    $beginHookFormElements = $template->get_template_vars( 'beginHookFormElements' );
+    if ( ! $beginHookFormElements ) {
+        $beginHookFormElements = array( );
+    }
+    $beginHookFormElements[] = 'trackMail';
+    $beginHookFormElements[] = 'mailing_job';
+    $form->assign( 'beginHookFormElements', $beginHookFormElements );
+
+    // enable the checkbox
+    $scheduleReminderID = $form->getVar( '_id' );
+    if(!empty($scheduleReminderID)){
+
+      //set the default values for existing schedule reminder
+      $check = "SELECT id, mailing_id
+                FROM civicrm_custom_track_mailing
+                WHERE schedule_reminder_id = {$scheduleReminderID}
+                ";
+      $dao = CRM_Core_DAO::executeQuery($check);
+      if ( $dao->fetch() ){
+        $mid = $dao->mailing_id;
+        $defaults['trackMail'] = '1';
+        $defaults['mailing_job'] = $mid;
+        $form->setDefaults( $defaults );
+        $url = CRM_Utils_System::url('civicrm/mailing/report', 'mid='.$mid.'&reset=1');
+        echo "<a id='view_mailing_report' href=".$url.">&nbsp;View Mailing Report</a>";
+      }
+    }
+  }
+}
+
+function trackmailing_civicrm_postProcess( $formName, &$form ) {
+  if($formName == "CRM_Admin_Form_ScheduleReminders"){
+      $submitValues       = $form->_submitValues;
+      $trackMail          = $submitValues['trackMail'];
+      $mailing_id         = $submitValues['mailing_job'];
+      $title              = $submitValues['title'];
+      $scheduleReminderID = $form->getVar( '_id' );
+      if(!$scheduleReminderID && !empty($title)){
+          $query  = "SELECT id
+                FROM civicrm_action_schedule
+                WHERE title = '{$title}'
+                ";
+          $scheduleReminderID = CRM_Core_DAO::singleValueQuery($query);
+      }
+
+      if($trackMail && !empty($scheduleReminderID)){
+        $check = "SELECT id
+                  FROM civicrm_custom_track_mailing
+                  WHERE schedule_reminder_id = {$scheduleReminderID}
+                  ";
+        $dao = CRM_Core_DAO::singleValueQuery($check);
+        if( !$dao ){
+          $sql = "INSERT INTO civicrm_custom_track_mailing
+                    ( schedule_reminder_id, mailing_id ) VALUES ( %1, %2)
+                    ";
+          $params = array( 1 => array( $scheduleReminderID, 'Integer' ), 2 => array( $mailing_id, 'Integer' ));
+        }else{
+          $sql = "UPDATE `civicrm_custom_track_mailing`
+                  SET    `mailing_id`=%1
+                  WHERE  `schedule_reminder_id`=%2";
+          $params = array( 1 => array( $mailing_id, 'Integer' ), 2 => array( $scheduleReminderID, 'Integer' ));
+        }
+        CRM_Core_DAO::executeQuery($sql, $params);
+      }
+
+  }
+}
+function trackmailing_get_tracking_mailing_mailing_id( $schedual_id ) {
+  $sSql =<<<EOD
+            SELECT t.mailing_id
+            FROM   civicrm_custom_track_mailing t
+            JOIN   civicrm_mailing m ON m.id = t.mailing_id
+            WHERE  t.schedule_reminder_id    = %1
+EOD;
+  $aParams = array( 1 => array( $schedual_id, 'Integer' ) );
+
+  return CRM_Core_DAO::singleValueQuery( $sSql, $aParams );
+}
+
+function trackmailing_is_tracking_mailing( $mailing_id ) {
+  $sSql =<<<EOD
+            SELECT t.mailing_id
+            FROM   civicrm_custom_track_mailing t
+            JOIN   civicrm_mailing m ON m.id = t.mailing_id
+            WHERE  t.mailing_id    = %1
+EOD;
+  $aParams = array( 1 => array( $mailing_id, 'Integer' ) );
+
+  return CRM_Core_DAO::singleValueQuery( $sSql, $aParams );
+}
+
+function trackmailing_add_to_mailing_recipients( $mailing_id
+                                               , $contact_id
+                                               , $email_id
+                                               ) {
+  $sSql =<<<EOD
+          INSERT INTO civicrm_mailing_recipients
+          ( mailing_id
+          , contact_id
+          , email_id
+          )
+          VALUES ( %1
+          ,        %2
+          ,        %3
+          );
+EOD;
+  $aParams = array( 1 => array( $mailing_id, 'Integer' )
+                  , 2 => array( $contact_id, 'Integer' )
+                  , 3 => array( $email_id  , 'Integer' )
+                  );
+
+
+  $oMailingRecipients = CRM_Core_DAO::executeQuery( $sSql, $aParams );
+
+  // Now we need to add to the Mailing Queue the Mailing Recipients.
+  $sSql =<<<EOD
+          SELECT id
+          FROM   civicrm_mailing_job
+          WHERE  mailing_id = %1
+          AND    job_type   = 'child';
+EOD;
+  $aParams            = array( 1 => array( $mailing_id, 'Integer' ) );
+  $oMailingJobs       = CRM_Core_DAO::executeQuery( $sSql, $aParams );
+  $aNewMailEventQueue = array();
+  while( $oMailingJobs->fetch() ) {
+    $aNewMailEventQueue[] = array( $oMailingJobs->id
+                                  , $email_id
+                                  , $contact_id
+                                  , 'null'
+                                  );
+
+  }
+CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate:" . print_r( $aNewMailEventQueue, true )  );
+  if ( !empty( $aNewMailEventQueue ) ) {
+    CRM_Mailing_Event_BAO_Queue::bulkCreate( $aNewMailEventQueue );
+  }
+CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate - DONE.");
+
+  return $oMailingRecipients;
+}
+
+function tracking_civicrm_set_mail_job_to_running( $mailing_id ) {
+
+  // Set Parent and Child status to Running.
+  $sSql =<<<EOD
+            UPDATE civicrm_mailing_job
+            SET    end_date   = null
+            ,      status     = 'Running'
+            WHERE  mailing_id = %1;
+EOD;
+  $aParams = array( 1 => array( $mailing_id, 'Integer' ) );
+  CRM_Core_DAO::executeQuery( $sSql, $aParams );
+
+  // Now set the Job Limit of the Child record to be the total rec of Recipient
+  $iJobLimit   = CRM_Mailing_BAO_Recipients::mailingSize( $mailing_id );
+CRM_Core_Error::debug_log_message("tracking_civicrm_set_mail_job_to_running - iJobLimit:" . print_r( $iJobLimit, true )  );
+  $sSql        =<<<EOD
+            UPDATE civicrm_mailing_job
+            SET    job_limit  = %2
+            WHERE  mailing_id = %1
+            AND    job_type   = 'child'
+EOD;
+  $aParams = array( 1 => array( $mailing_id, 'Integer' )
+                  , 2 => array( $iJobLimit , 'Integer' )
+                  );
+  CRM_Core_DAO::executeQuery( $sSql, $aParams );
+  CRM_Core_Error::debug_log_message("tracking_civicrm_set_mail_job_to_running - DONE. "  );
+}
+
+
+function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
+  if ( $params['groupName']  == 'Scheduled Reminder Sender' ) {
+    $iMailingId = trackmailing_get_tracking_mailing_mailing_id( $params['schedule_id'] );
+
+    if ( empty( $iMailingId ) ) {
+      CRM_Core_Error::debug_log_message( "trackmailing_civicrm_alterMailParams: Failed to locate Mailing ID with schedule_id:" . $params['schedule_id'] );
+    } else {
+      /*
+       * We want want to abort the mail from being sent, set the boolean abortMailSend to true in the params array
+       */
+      $params['abortMailSend'] = true;
+
+      /*
+       * Instead add to civicrm_mailing_recipients for the mailing job and set the mailing job to scheduled
+       */
+      $aEmail = civicrm_api( "Email"
+                           , "getsingle"
+                           , array( 'version'   => '3'
+                                  , 'sequential' => '1'
+                                  , 'contact_id' => $params['contact_id']
+                                  , 'is_primary' => '1'
+                                  )
+                           );
+
+      $oDao   = trackmailing_add_to_mailing_recipients( $iMailingId
+                                                      , $params['contact_id']
+                                                      , $aEmail['id']
+                                                      );
+
+      if ( $oDao ) {
+        /* Now set the  mailing job to scheduled */
+        tracking_civicrm_set_mail_job_to_running( $iMailingId );
+      } else {
+        CRM_Core_Error::debug_log_message("trackmailing_civicrm_alterMailParams: Failed to insert into civicrm_mailing_recipients - mailing_id: $iMailingId, contact_id:" . $params['contact_id'] . ', email_id:' .$aEmail['id'] );
+      }
+    }
+  }
+}
+
+function trackmailing_civicrm_unsubscribeGroups( $op, $mailingId, $contactId, &$groups, &$baseGroups ) {
+  if ( $op == 'unsubscribe' && trackmailing_is_tracking_mailing( $mailingId ) ) {
+    $oConfig                 = CRM_Core_Config::singleton();
+    $sUnsubscribeRedirectUrl = $oConfig->unsubscribe_redirect_url;
+    if ( !empty( $sUnsubscribeRedirectUrl ) ) {
+      CRM_Utils_System::redirect( $sUnsubscribeRedirectUrl );
+    } else {
+      CRM_Core_Error::statusBounce( 'Unsubscribe URL has not been set.' );
+    }
+    CRM_Utils_System::civiExit();
+  }
+}

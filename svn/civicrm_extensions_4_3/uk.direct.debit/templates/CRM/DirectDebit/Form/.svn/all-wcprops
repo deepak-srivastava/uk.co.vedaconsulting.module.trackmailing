@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 93
+/civicrm-dd/!svn/ver/35/civicrm_extensions_4_3/uk.direct.debit/templates/CRM/DirectDebit/Form
+END
+DirectDebit.tpl
+K 25
+svn:wc:ra_dav:version-url
+V 109
+/civicrm-dd/!svn/ver/35/civicrm_extensions_4_3/uk.direct.debit/templates/CRM/DirectDebit/Form/DirectDebit.tpl
+END
+DirectDebitList.tpl
+K 25
+svn:wc:ra_dav:version-url
+V 113
+/civicrm-dd/!svn/ver/35/civicrm_extensions_4_3/uk.direct.debit/templates/CRM/DirectDebit/Form/DirectDebitList.tpl
+END
