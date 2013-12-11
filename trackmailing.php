@@ -310,7 +310,7 @@ function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
 			     "getsingle",
 			     array('version'    => '3',
 				   'sequential' => '1',
-				   'contact_id' => 203,
+				   'contact_id' => $params['contact_id'],
 				   'do_not_sms' => 0,
 				   'phone_type_id' => $phoneTypes['Mobile']));
 	if (!CRM_Utils_Array::value('id', $phone)) {
