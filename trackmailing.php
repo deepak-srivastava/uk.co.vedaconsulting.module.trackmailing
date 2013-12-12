@@ -86,19 +86,19 @@ function trackmailing_civicrm_managed(&$entities) {
 
 function trackmailing_civicrm_buildForm($formName, &$form) {
   if ($formName == "CRM_Admin_Form_ScheduleReminders"){
-
-      //using sql to retrive all the mailing job and mailing id
-      $query = "SELECT cmj.id as job_id
-                , cmj.mailing_id as mid
-                , cm.name as name
-                , cm.is_archived as is_archived
-                FROM `civicrm_mailing_job` as cmj
-                  JOIN civicrm_mailing as cm ON ( cm.id = cmj.mailing_id)
-                ORDER BY cm.is_archived DESC, cm.name ASC
-                ";
+    //using sql to retrive all the mailing job and mailing id
+    $query = "
+SELECT cmj.id         as job_id,
+       cmj.mailing_id as mid,
+       cm.name        as name,
+       cm.is_archived as is_archived,
+       cm.sms_provider_id as is_sms
+FROM `civicrm_mailing_job` as cmj
+JOIN civicrm_mailing as cm ON ( cm.id = cmj.mailing_id)
+ORDER BY cm.is_archived DESC, cm.name ASC";
       $dao = CRM_Core_DAO::executeQuery($query);
       while ( $dao->fetch() ){
-        $getAllMailingJob[$dao->mid] = $dao->name;
+        $getAllMailingJob[$dao->mid] = $dao->is_sms ? "{$dao->name} (SMS)" : $dao->name;
       }
 
      $form->addElement( 'checkbox', 'trackMail', ts( 'Track Mailing' ) );
@@ -197,54 +197,54 @@ EOD;
   return CRM_Core_DAO::singleValueQuery( $sSql, $aParams );
 }
 
-function trackmailing_add_to_mailing_recipients( $mailing_id
-                                               , $contact_id
-                                               , $email_id
-                                               ) {
-  $sSql =<<<EOD
-          INSERT INTO civicrm_mailing_recipients
-          ( mailing_id
-          , contact_id
-          , email_id
-          )
-          VALUES ( %1
-          ,        %2
-          ,        %3
-          );
-EOD;
-  $aParams = array( 1 => array( $mailing_id, 'Integer' )
-                  , 2 => array( $contact_id, 'Integer' )
-                  , 3 => array( $email_id  , 'Integer' )
-                  );
-
-
-  $oMailingRecipients = CRM_Core_DAO::executeQuery( $sSql, $aParams );
-
-  // Now we need to add to the Mailing Queue the Mailing Recipients.
-  $sSql =<<<EOD
-          SELECT id
-          FROM   civicrm_mailing_job
-          WHERE  mailing_id = %1
-          AND    job_type   = 'child';
-EOD;
-  $aParams            = array( 1 => array( $mailing_id, 'Integer' ) );
-  $oMailingJobs       = CRM_Core_DAO::executeQuery( $sSql, $aParams );
-  $aNewMailEventQueue = array();
-  while( $oMailingJobs->fetch() ) {
-    $aNewMailEventQueue[] = array( $oMailingJobs->id
-                                  , $email_id
-                                  , $contact_id
-                                  , 'null'
-                                  );
-
+function trackmailing_add_to_mailing_recipients($mailing_id, $contact_id, $email_id = NULL, $phone_id = NULL) {
+  if (!$email_id && !$phone_id) {
+    CRM_Core_Error::debug_log_message("Required params to amend recipients missing.");
+    return FALSE;
   }
-CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate:" . print_r( $aNewMailEventQueue, true )  );
-  if ( !empty( $aNewMailEventQueue ) ) {
-    CRM_Mailing_Event_BAO_Queue::bulkCreate( $aNewMailEventQueue );
-  }
-CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate - DONE.");
 
-  return $oMailingRecipients;
+  $params = array( 
+    1 => array( $mailing_id, 'Integer' ),
+    2 => array( $contact_id, 'Integer' ));
+  $values = "%1, %2";
+
+  $values .= $email_id ? ", %3" : ", NULL";
+  if ($email_id) {
+    $params[3] = array($email_id, 'Integer');
+  }
+
+  $values .= $phone_id ? ", %4" : ", NULL";
+  if ($phone_id) {
+    $params[4] = array($phone_id, 'Integer');
+  }
+
+  $sql = "INSERT INTO civicrm_mailing_recipients(mailing_id, contact_id, email_id, phone_id) VALUES ({$values});";
+  $mailingRecipients = CRM_Core_DAO::executeQuery( $sql, $params );
+
+  // add to the Mailing Queue, the Mailing Recipients.
+  $sql ="
+SELECT id
+FROM   civicrm_mailing_job
+WHERE  mailing_id = %1 AND job_type   = 'child'";
+  $params      = array(1 => array($mailing_id, 'Integer'));
+  $mailingJobs = CRM_Core_DAO::executeQuery($sql, $params);
+  $newMailEventQueue = array();
+  while( $mailingJobs->fetch() ) {
+    $newMailEventQueue[] = 
+      array(
+        $mailingJobs->id, 
+        $email_id ? $email_id : 'null',
+        $contact_id,
+        $phone_id ? $phone_id : 'null');
+  }
+  CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate:" . print_r($newMailEventQueue, true)  );
+
+  if (!empty( $newMailEventQueue )) {
+    CRM_Mailing_Event_BAO_Queue::bulkCreate( $newMailEventQueue );
+  }
+  CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate - DONE.");
+
+  return $mailingRecipients;
 }
 
 function tracking_civicrm_set_mail_job_to_running( $mailing_id ) {
@@ -279,7 +279,7 @@ EOD;
 function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
   if ( $params['groupName']  == 'Scheduled Reminder Sender' ) {
     $iMailingId = trackmailing_get_tracking_mailing_mailing_id( $params['schedule_id'] );
-
+    
     if ( empty( $iMailingId ) ) {
       CRM_Core_Error::debug_log_message( "trackmailing_civicrm_alterMailParams: Failed to locate Mailing ID with schedule_id:" . $params['schedule_id'] );
     } else {
@@ -288,28 +288,42 @@ function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
        */
       $params['abortMailSend'] = true;
 
+      // check if mailing is an sms-mailing
+      $isSMSMailing = CRM_Core_DAO::getFieldValue('CRM_Mailing_DAO_Mailing', $iMailingId, 'sms_provider_id', 'id');
+
       /*
        * Instead add to civicrm_mailing_recipients for the mailing job and set the mailing job to scheduled
        */
-      $aEmail = civicrm_api( "Email"
-                           , "getsingle"
-                           , array( 'version'   => '3'
-                                  , 'sequential' => '1'
-                                  , 'contact_id' => $params['contact_id']
-                                  , 'is_primary' => '1'
-                                  )
-                           );
-
-      $oDao   = trackmailing_add_to_mailing_recipients( $iMailingId
-                                                      , $params['contact_id']
-                                                      , $aEmail['id']
-                                                      );
-
+      $email = $phone = array();
+      if (!$isSMSMailing) {
+        $email = civicrm_api("Email",
+                 "getsingle",
+                 array('version'   => '3',
+                   'sequential' => '1',
+                   'contact_id' => $params['contact_id'],
+                   'is_primary' => '1'));
+      } else {
+        $phoneTypes = CRM_Core_OptionGroup::values('phone_type', TRUE, FALSE, FALSE, NULL, 'name');
+        $phone = civicrm_api("Phone",
+                 "getsingle",
+                 array('version'    => '3',
+                   'sequential' => '1',
+                   'contact_id' => $params['contact_id'],
+                   'do_not_sms' => 0,
+                   'phone_type_id' => $phoneTypes['Mobile']));
+        if (!CRM_Utils_Array::value('id', $phone)) {
+          CRM_Core_Error::debug_log_message("trackmailing_civicrm_alterMailParams: Could not retrieve phone for mailing_id: {$iMailingId}, contact_id: {$params['contact_id']}");
+        }
+      }
+      $oDao = trackmailing_add_to_mailing_recipients($iMailingId,
+              $params['contact_id'],
+              CRM_Utils_Array::value('id', $email),
+              CRM_Utils_Array::value('id', $phone));
       if ( $oDao ) {
         /* Now set the  mailing job to scheduled */
         tracking_civicrm_set_mail_job_to_running( $iMailingId );
       } else {
-        CRM_Core_Error::debug_log_message("trackmailing_civicrm_alterMailParams: Failed to insert into civicrm_mailing_recipients - mailing_id: $iMailingId, contact_id:" . $params['contact_id'] . ', email_id:' .$aEmail['id'] );
+        CRM_Core_Error::debug_log_message("trackmailing_civicrm_alterMailParams: Failed to insert into civicrm_mailing_recipients - mailing_id: $iMailingId, contact_id:" . $params['contact_id'] . ', email_id:' .$email['id'] );
       }
     }
   }
