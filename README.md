@@ -1,5 +1,3 @@
-uk.co.vedaconsulting.module.trackmailing
-========================================
 
 Attach Scheduled Reminders to bulk & sms mailings. 
 
