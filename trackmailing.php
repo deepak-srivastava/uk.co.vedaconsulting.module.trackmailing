@@ -26,7 +26,8 @@ function trackmailing_civicrm_install() {
           (
           id int primary key AUTO_INCREMENT,
           schedule_reminder_id  int,
-          mailing_id int
+          mailing_id int,
+          is_respect_optout tinyint(4) DEFAULT 0 COMMENT 'Should the bulk email flag of contact be respected?'
           )";
   CRM_Core_DAO::executeQuery($sql);
   return _trackmailing_civix_civicrm_install();
@@ -87,6 +88,7 @@ function trackmailing_civicrm_managed(&$entities) {
 function trackmailing_civicrm_buildForm($formName, &$form) {
   if ($formName == "CRM_Admin_Form_ScheduleReminders"){
     //using sql to retrive all the mailing job and mailing id
+    $getAllMailingJob = array();
     $query = "
 SELECT cmj.id         as job_id,
        cmj.mailing_id as mid,
@@ -96,20 +98,22 @@ SELECT cmj.id         as job_id,
 FROM `civicrm_mailing_job` as cmj
 JOIN civicrm_mailing as cm ON ( cm.id = cmj.mailing_id)
 ORDER BY cm.is_archived DESC, cm.name ASC";
-      $dao = CRM_Core_DAO::executeQuery($query);
-      while ( $dao->fetch() ){
-        $getAllMailingJob[$dao->mid] = $dao->is_sms ? "{$dao->name} (SMS)" : $dao->name;
-      }
+    $dao = CRM_Core_DAO::executeQuery($query);
+    while ( $dao->fetch() ){
+      $getAllMailingJob[$dao->mid] = $dao->is_sms ? "{$dao->name} (SMS)" : $dao->name;
+    }
 
-     $form->addElement( 'checkbox', 'trackMail', ts( 'Track Mailing' ) );
-     $form->addElement( 'select', 'mailing_job', ts( 'Mailing Job' ), $getAllMailingJob);
-
+    $form->addYesNo('is_respect_optout', ts('Respect Bulk Email Privacy Flag?'));
+    $form->addElement( 'checkbox', 'trackMail', ts( 'Track Mailing' ) );
+    $form->addElement( 'select', 'mailing_job', ts( 'Mailing Job' ), $getAllMailingJob);
+    
     // also assign to template
     $template =& CRM_Core_Smarty::singleton( );
     $beginHookFormElements = $template->get_template_vars( 'beginHookFormElements' );
     if ( ! $beginHookFormElements ) {
         $beginHookFormElements = array( );
     }
+    $beginHookFormElements[] = 'is_respect_optout';
     $beginHookFormElements[] = 'trackMail';
     $beginHookFormElements[] = 'mailing_job';
     $form->assign( 'beginHookFormElements', $beginHookFormElements );
@@ -119,7 +123,7 @@ ORDER BY cm.is_archived DESC, cm.name ASC";
     if(!empty($scheduleReminderID)){
 
       //set the default values for existing schedule reminder
-      $check = "SELECT id, mailing_id
+      $check = "SELECT *
                 FROM civicrm_custom_track_mailing
                 WHERE schedule_reminder_id = {$scheduleReminderID}
                 ";
@@ -128,9 +132,13 @@ ORDER BY cm.is_archived DESC, cm.name ASC";
         $mid = $dao->mailing_id;
         $defaults['trackMail'] = '1';
         $defaults['mailing_job'] = $mid;
+        $defaults['is_respect_optout'] = $dao->is_respect_optout;
         $form->setDefaults( $defaults );
         $url = CRM_Utils_System::url('civicrm/mailing/report', 'mid='.$mid.'&reset=1');
         echo "<a id='view_mailing_report' href=".$url.">&nbsp;View Mailing Report</a>";
+      } else {
+        // defaults for new reminder
+        $defaults['is_respect_optout'] = 1;
       }
     }
   }
@@ -159,30 +167,46 @@ function trackmailing_civicrm_postProcess( $formName, &$form ) {
         $dao = CRM_Core_DAO::singleValueQuery($check);
         if( !$dao ){
           $sql = "INSERT INTO civicrm_custom_track_mailing
-                    ( schedule_reminder_id, mailing_id ) VALUES ( %1, %2)
+                    (schedule_reminder_id, mailing_id, is_respect_optout) VALUES (%1, %2, %3)
                     ";
-          $params = array( 1 => array( $scheduleReminderID, 'Integer' ), 2 => array( $mailing_id, 'Integer' ));
+          $params = array( 
+            1 => array( $scheduleReminderID, 'Integer' ), 
+            2 => array( $mailing_id, 'Integer' ),
+            3 => array( CRM_Utils_Array::value('is_respect_optout', $submitValues, 0), 'Integer' )
+          );
         }else{
           $sql = "UPDATE `civicrm_custom_track_mailing`
-                  SET    `mailing_id`=%1
-                  WHERE  `schedule_reminder_id`=%2";
-          $params = array( 1 => array( $mailing_id, 'Integer' ), 2 => array( $scheduleReminderID, 'Integer' ));
+                  SET    `mailing_id`=%1, is_respect_optout=%2
+                  WHERE  `schedule_reminder_id`=%3";
+          $params = array( 
+            1 => array( $mailing_id, 'Integer' ), 
+            2 => array( CRM_Utils_Array::value('is_respect_optout', $submitValues, 0), 'Integer' ),
+            3 => array( $scheduleReminderID, 'Integer' )
+          );
         }
         CRM_Core_DAO::executeQuery($sql, $params);
       }
 
   }
 }
-function trackmailing_get_tracking_mailing_mailing_id( $schedual_id ) {
-  $sSql =<<<EOD
-            SELECT t.mailing_id
-            FROM   civicrm_custom_track_mailing t
-            JOIN   civicrm_mailing m ON m.id = t.mailing_id
-            WHERE  t.schedule_reminder_id    = %1
-EOD;
-  $aParams = array( 1 => array( $schedual_id, 'Integer' ) );
 
-  return CRM_Core_DAO::singleValueQuery( $sSql, $aParams );
+function trackmailing_get_tracking_mailing_info($schedual_id) {
+  if ($schedual_id) {
+    $query = "
+    SELECT  t.*
+      FROM  civicrm_custom_track_mailing t
+INNER JOIN  civicrm_mailing m ON m.id = t.mailing_id
+     WHERE  t.schedule_reminder_id = %1 LIMIT 1";
+    $dao   = CRM_Core_DAO::executeQuery($query, array(1 => array($schedual_id, 'Integer')));
+    if ($dao->fetch()) {
+      return 
+        array(
+          'mailing_id'        => $dao->mailing_id,
+          'is_respect_optout' => $dao->is_respect_optout, 
+        );
+    }
+  }
+  return array();
 }
 
 function trackmailing_is_tracking_mailing( $mailing_id ) {
@@ -278,8 +302,10 @@ EOD;
 
 function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
   if ( $params['groupName']  == 'Scheduled Reminder Sender' ) {
-    $iMailingId = trackmailing_get_tracking_mailing_mailing_id( $params['schedule_id'] );
-    
+    $trackParams = trackmailing_get_tracking_mailing_info($params['schedule_id']);
+    $iMailingId  = $trackParams['mailing_id'];
+    $respectBulkFlag = $trackParams['is_respect_optout'];
+
     if ( empty( $iMailingId ) ) {
       CRM_Core_Error::debug_log_message( "trackmailing_civicrm_alterMailParams: Failed to locate Mailing ID with schedule_id:" . $params['schedule_id'] );
     } else {
@@ -302,6 +328,15 @@ function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
                    'sequential' => '1',
                    'contact_id' => $params['contact_id'],
                    'is_primary' => '1'));
+        if ($email && $respectBulkFlag) {
+          $contact = new CRM_Contact_BAO_Contact();
+          $contact->id = $params['contact_id'];
+          $contact->find(TRUE);
+          if ($contact->is_opt_out) {
+            CRM_Core_Error::debug_log_message( "trackmailing_civicrm_alterMailParams: Skipped attaching contact to recipient list, inorder to respect bulk email flag setting in reminder - Contact: cid={$params['contact_id']}, email={$email['id']}.");
+            return;
+          }
+        }
       } else {
         $phoneTypes = CRM_Core_OptionGroup::values('phone_type', TRUE, FALSE, FALSE, NULL, 'name');
         $phone = civicrm_api("Phone",
