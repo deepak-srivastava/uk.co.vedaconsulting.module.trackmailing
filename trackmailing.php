@@ -103,7 +103,13 @@ ORDER BY cm.is_archived DESC, cm.name ASC";
       $getAllMailingJob[$dao->mid] = $dao->is_sms ? "{$dao->name} (SMS)" : $dao->name;
     }
 
-    $form->addYesNo('is_respect_optout', ts('Respect Bulk Email Privacy Flag?'));
+    // build email type radio option
+    $choice    = array();
+    $attribute = array('id_suffix' => 'is_respect_optout');
+    $choice[]  = $form->createElement('radio', NULL, '11', ts('Marketing'), '1', $attribute);
+    $choice[]  = $form->createElement('radio', NULL, '11', ts('Transactional'), '0', $attribute);
+    $form->addGroup($choice, 'is_respect_optout', ts('Email Type'));
+
     $form->addElement( 'checkbox', 'trackMail', ts( 'Track Mailing' ) );
     $form->addElement( 'select', 'mailing_job', ts( 'Mailing Job' ), $getAllMailingJob);
     
@@ -136,10 +142,11 @@ ORDER BY cm.is_archived DESC, cm.name ASC";
         $form->setDefaults( $defaults );
         $url = CRM_Utils_System::url('civicrm/mailing/report', 'mid='.$mid.'&reset=1');
         echo "<a id='view_mailing_report' href=".$url.">&nbsp;View Mailing Report</a>";
-      } else {
-        // defaults for new reminder
-        $defaults['is_respect_optout'] = 1;
       }
+    } else {
+      // defaults for new reminder
+      $defaults['is_respect_optout'] = 1;
+      $form->setDefaults( $defaults );
     }
   }
 }
