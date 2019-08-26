@@ -1,0 +1,118 @@
+diff --git a/docroot/sites/all/modules/contrib/civicrm/CRM/Mailing/BAO/Mailing.php b/docroot/sites/all/modules/contrib/civicrm/CRM/Mailing/BAO/Mailing.php
+index d82672597..7bd98e80a 100644
+--- a/docroot/sites/all/modules/contrib/civicrm/CRM/Mailing/BAO/Mailing.php
++++ b/docroot/sites/all/modules/contrib/civicrm/CRM/Mailing/BAO/Mailing.php
+@@ -138,6 +138,23 @@ class CRM_Mailing_BAO_Mailing extends CRM_Mailing_DAO_Mailing {
+     $eq      = CRM_Mailing_Event_DAO_Queue::getTableName();
+     $ed      = CRM_Mailing_Event_DAO_Delivered::getTableName();
+     $eb      = CRM_Mailing_Event_DAO_Bounce::getTableName();
++    // Custom.
++    $isRespectOptout = 1;
++
++    if ($mailing_id) {
++      // The Mailing Setting Form creates mailing before postProcess hook implementation
++      // Can save its own settings, so we check POSTed values for our flag.
++      if (isset($_POST['is_respect_optout'])) {
++        $isRespectOptout = CRM_Utils_Array::value('is_respect_optout', $_POST, 1);
++      }
++      else {
++        $customSettings = CRM_Trackmailing_Utils::getSetting(0, $mailing_id);
++        if ($customSettings) {
++          $isRespectOptout = CRM_Utils_Array::value('is_respect_optout', $customSettings, 1);
++        }
++      }
++    }
++    // End Custom.
+ 
+     $email = CRM_Core_DAO_Email::getTableName();
+     if ($mode == 'sms') {
+@@ -261,8 +278,6 @@ WHERE  c.group_id = {$groupDAO->id}
+                                        ($mg.group_type = 'Include')
+                         AND             $mg.search_id IS NULL
+                         AND             $g2contact.status = 'Added'
+-                        AND             $contact.do_not_email = 0
+-                        AND             $contact.is_opt_out = 0
+                         AND             $contact.is_deceased = 0
+                         AND            ($email.is_bulkmail = 1 OR $email.is_primary = 1)
+                         AND             $email.email IS NOT NULL
+@@ -270,7 +285,16 @@ WHERE  c.group_id = {$groupDAO->id}
+                         AND             $email.on_hold = 0
+                         AND             $mg.mailing_id = {$mailing_id}
+                         AND             X_$job_id.contact_id IS null
+-                    ORDER BY $email.is_bulkmail";
++                    ";
++                    // Exclude opt-outs if mailing is not transactional.
++                    if ($isRespectOptout) {
++                       $query .= "
++                        AND             $contact.do_not_email = 0
++                        AND             $contact.is_opt_out = 0
++                     ";
++                    }
++                    $query .= "
++                        ORDER BY $email.is_bulkmail";
+ 
+     if ($mode == 'sms') {
+       $phoneTypes = CRM_Core_OptionGroup::values('phone_type', TRUE, FALSE, FALSE, NULL, 'name');
+@@ -321,13 +345,21 @@ WHERE  c.group_id = {$groupDAO->id}
+                             ON          $contact.id = X_$job_id.contact_id
+                     WHERE
+                                        ($mg.group_type = 'Include')
+-                        AND             $contact.do_not_email = 0
+-                        AND             $contact.is_opt_out = 0
+                         AND             $contact.is_deceased = 0
+                         AND            ($email.is_bulkmail = 1 OR $email.is_primary = 1)
+                         AND             $email.on_hold = 0
+                         AND             $mg.mailing_id = {$mailing_id}
+                         AND             X_$job_id.contact_id IS null
++                    ";
++    // Exclude opt-outs if this is not a transactional mailing.
++    if ($isRespectOptout) {
++      $query .= "
++ 
++                        AND             $contact.do_not_email = 0
++                        AND             $contact.is_opt_out = 0
++      ";
++    }
++    $query .= "
+                     ORDER BY $email.is_bulkmail";
+ 
+     if ($mode == 'sms') {
+@@ -383,8 +415,14 @@ INNER JOIN civicrm_email e                ON e.contact_id         = c.id
+ INNER JOIN civicrm_group_contact_cache gc ON gc.contact_id        = c.id
+ LEFT  JOIN X_$job_id                      ON X_$job_id.contact_id = c.id
+ WHERE      gc.group_id = {$groupDAO->id}
++";
++      if ($isRespectOptout) {
++$smartGroupInclude .=  "
+   AND      c.do_not_email = 0
+   AND      c.is_opt_out = 0
++";
++      }
++$smartGroupInclude .=  "
+   AND      c.is_deceased = 0
+   AND      (e.is_bulkmail = 1 OR e.is_primary = 1)
+   AND      e.on_hold = 0
+@@ -447,13 +485,21 @@ AND    $mg.mailing_id = {$mailing_id}
+                                         $mg.entity_table = '$group'
+                         AND             $mg.group_type = 'Include'
+                         AND             $g2contact.status = 'Added'
+-                        AND             $contact.do_not_email = 0
+-                        AND             $contact.is_opt_out = 0
+                         AND             $contact.is_deceased = 0
+                         AND             ($email.is_bulkmail = 1 OR $email.is_primary = 1)
+                         AND             $email.on_hold = 0
+                         AND             $mg.mailing_id = {$mailing_id}
+                         AND             X_$job_id.contact_id IS null
++     ";
++     // Exclude opt-outs if this is a transactional mailing.
++     if ($isRespectOptout) {
++       $query .= "
++
++                        AND             $contact.do_not_email = 0
++                        AND             $contact.is_opt_out = 0
++       ";
++     }
++     $query .= "
+                     ORDER BY $email.is_bulkmail";
+     if ($mode == "sms") {
+       $query = "REPLACE INTO       I_$job_id (phone_id, contact_id)
