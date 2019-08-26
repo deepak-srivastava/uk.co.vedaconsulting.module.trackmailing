@@ -85,7 +85,34 @@ function trackmailing_civicrm_managed(&$entities) {
   return _trackmailing_civix_civicrm_managed($entities);
 }
 
+/**
+ * Implements HOOK_civicrm_buildForm().
+ * @param string $formName
+ * @param CRM_Core_Form $form
+ */
 function trackmailing_civicrm_buildForm($formName, &$form) {
+  if ($formName == "CRM_Mailing_Form_Group") {
+    $choice    = array();
+    $attribute = array('id_suffix' => 'is_respect_optout');
+    $choice[]  = $form->createElement('radio', NULL, '11', ts('Marketing'), '1', $attribute);
+    $choice[]  = $form->createElement('radio', NULL, '11', ts('Transactional'), '0', $attribute);
+    $form->addGroup($choice, 'is_respect_optout', ts('Mailing Type'));
+    $template =& CRM_Core_Smarty::singleton( );
+    $elements = $template->get_template_vars('trackMailingExtra');
+    if (!$elements) {
+      $elements[] = 'is_respect_optout';
+      $form->assign('trackMailingExtra', $elements);
+    }
+    $defaults['is_respect_optout'] = 1;
+    // Set default if this is an existing mailing.
+    $mailingID = $form->get('mailing_id');
+    $mailingID = $mailingID ? $mailingID : CRM_Utils_Request::retrieve('mid', 'Integer', $form, FALSE, NULL);
+    if ($mailingID) {
+      $setting = CRM_Trackmailing_Utils::getSetting(0, $mailingID);
+      $defaults['is_respect_optout'] = CRM_Utils_Array::value('is_respect_optout', $setting, 1);
+    }
+    $form->setDefaults($defaults);
+  }
   if ($formName == "CRM_Admin_Form_ScheduleReminders"){
     //using sql to retrive all the mailing job and mailing id
     $getAllMailingJob = array();
@@ -141,7 +168,7 @@ ORDER BY cm.is_archived DESC, cm.name ASC";
         $defaults['is_respect_optout'] = $dao->is_respect_optout;
         $form->setDefaults( $defaults );
         $url = CRM_Utils_System::url('civicrm/mailing/report', 'mid='.$mid.'&reset=1');
-        echo "<a id='view_mailing_report' href=".$url.">&nbsp;View Mailing Report</a>";
+        //echo "<a id='view_mailing_report' href=".$url.">&nbsp;View Mailing Report</a>";
       }
     } else {
       // defaults for new reminder
@@ -194,6 +221,14 @@ function trackmailing_civicrm_postProcess( $formName, &$form ) {
         CRM_Core_DAO::executeQuery($sql, $params);
       }
 
+  }
+  if ($formName == "CRM_Mailing_Form_Group") {
+    $submitValues = $form->_submitValues;
+    $mailingID = $form->get('mailing_id');
+    $isRespectOptout = CRM_Utils_Array::value('is_respect_optout', $submitValues, 1);
+    if ($mailingID) {
+      CRM_Trackmailing_Utils::saveSetting(['mailing_id' => $mailingID, 'is_respect_optout' => $isRespectOptout]);
+    }
   }
 }
 
@@ -273,7 +308,7 @@ WHERE  mailing_id = %1 AND job_type   = 'child'";
   if (!empty( $newMailEventQueue )) {
     CRM_Mailing_Event_BAO_Queue::bulkCreate( $newMailEventQueue );
   }
-  CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate - DONE.");
+  CRM_Core_Error::debug_log_message("calling CRM_Mailing_Event_BAO_Queue::bulkCreate (Mailing ID : $mailing_id )- DONE.");
 
   return $mailingRecipients;
 }
@@ -339,7 +374,7 @@ function trackmailing_civicrm_alterMailParams( &$params, $context = NULL ) {
           $contact = new CRM_Contact_BAO_Contact();
           $contact->id = $params['contact_id'];
           $contact->find(TRUE);
-          if ($contact->is_opt_out) {
+          if ($contact->is_opt_out || $contact->do_not_email) {
             CRM_Core_Error::debug_log_message( "trackmailing_civicrm_alterMailParams: Skipped attaching contact to recipient list, inorder to respect bulk email flag setting in reminder - Contact: cid={$params['contact_id']}, email={$email['id']}.");
             return;
           }
